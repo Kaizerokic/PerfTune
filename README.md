@@ -40,7 +40,10 @@ PerfTune AI - это продвинутый инструмент для мони
 ### Зависимости Python
 ```bash
 # Обязательные пакеты
-pip install psutil numpy PyQt6
+pip install  -r requirements.txt
 
 # Опциональные пакеты (для расширенной функциональности)
 pip install plotly
+
+# Запуск программы (обязательно root для изменений!)
+sudo python3 main.py
