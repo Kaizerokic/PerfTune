@@ -1,5 +1,5 @@
-import os
 import sys
+import os
 import time
 import math
 import json
@@ -41,8 +41,11 @@ from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QPropertyAnimation, QE
 from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QLinearGradient, QBrush, QPixmap, QCursor
 from PyQt6.QtWidgets import QGraphicsBlurEffect, QGraphicsDropShadowEffect, QGraphicsOpacityEffect
 
+# Импорт нашего ИИ-агента
+from ai_agent import AdaptivePerformanceAI
+
 IS_ROOT = os.geteuid() == 0 if hasattr(os, "geteuid") else False
-APP_VERSION = "3.0 ULTIMATE OPTIMIZED"
+APP_VERSION = "4.0 AI POWERED"
 
 # ----------------- Resources -----------------
 RES_DIR = os.path.join(os.path.dirname(__file__), "resources")
@@ -357,7 +360,426 @@ class QuickAnalyzer(QThread):
             'recs': recs
         }
 
-# ----------------- PerfTuneUltimate -----------------
+# ----------------- AI Chat Widget -----------------
+class AIChatWidget(QWidget):
+    def __init__(self, parent=None, ai_agent=None):
+        super().__init__(parent)
+        self.ai_agent = ai_agent
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Заголовок ИИ
+        header = QLabel("🧠 PerfTune AI Assistant")
+        header.setStyleSheet("""
+            QLabel {
+                font-size: 18px;
+                font-weight: bold;
+                color: #1DB954;
+                padding: 10px;
+                background: rgba(25, 25, 35, 0.9);
+                border-radius: 8px;
+                margin-bottom: 10px;
+            }
+        """)
+        layout.addWidget(header)
+        
+        # Область сообщений ИИ
+        self.chat_area = QTextEdit()
+        self.chat_area.setReadOnly(True)
+        self.chat_area.setStyleSheet("""
+            QTextEdit {
+                background: rgba(20, 20, 30, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                color: #E0E0E0;
+                font-family: 'Segoe UI';
+                font-size: 11px;
+                padding: 10px;
+            }
+        """)
+        self.chat_area.setMinimumHeight(300)
+        layout.addWidget(self.chat_area)
+        
+        # Индикатор состояния ИИ
+        self.ai_status = QLabel("🟢 ИИ активен и анализирует систему")
+        self.ai_status.setStyleSheet("""
+            QLabel {
+                color: #1DB954;
+                font-size: 10px;
+                padding: 5px;
+                background: rgba(29, 185, 84, 0.1);
+                border-radius: 4px;
+            }
+        """)
+        layout.addWidget(self.ai_status)
+        
+        # Кнопки быстрых команд
+        self.setup_quick_commands(layout)
+        
+        # Поле ввода
+        input_layout = QHBoxLayout()
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Задайте вопрос ИИ о производительности...")
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                background: rgba(40, 40, 50, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                padding: 8px;
+                color: white;
+                font-size: 11px;
+            }
+        """)
+        self.input_field.returnPressed.connect(self.send_message)
+        input_layout.addWidget(self.input_field)
+        
+        send_btn = QPushButton("📤")
+        send_btn.setFixedWidth(40)
+        send_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(29, 185, 84, 220),
+                    stop:1 rgba(20, 150, 70, 220));
+                color: white;
+                border-radius: 6px;
+                border: none;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: rgba(39, 195, 94, 240);
+            }
+        """)
+        send_btn.clicked.connect(self.send_message)
+        input_layout.addWidget(send_btn)
+        
+        layout.addLayout(input_layout)
+        
+        # Начальное сообщение
+        self.add_ai_message("Привет! Я ваш ИИ-помощник по производительности. Я анализирую систему в реальном времени и могу дать рекомендации.")
+    
+    def setup_quick_commands(self, layout):
+        quick_commands = QWidget()
+        quick_layout = QHBoxLayout(quick_commands)
+        
+        commands = [
+            ("📊 Анализ системы", "проанализируй систему"),
+            ("💾 Проверить память", "проверь использование памяти"),
+            ("🚀 Оптимизация", "дай рекомендации по оптимизации"),
+            ("📈 Прогноз", "какой прогноз по производительности?")
+        ]
+        
+        for text, cmd in commands:
+            btn = QPushButton(text)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(60, 60, 70, 0.8);
+                    color: #B3B3B3;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    padding: 6px;
+                    font-size: 10px;
+                }
+                QPushButton:hover {
+                    background: rgba(80, 80, 90, 0.9);
+                    color: white;
+                }
+            """)
+            btn.clicked.connect(lambda checked, c=cmd: self.send_quick_command(c))
+            quick_layout.addWidget(btn)
+        
+        layout.addWidget(quick_commands)
+    
+    def add_ai_message(self, message):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        formatted_msg = f'<div style="margin: 5px; padding: 8px; border-radius: 8px; background: rgba(29, 185, 84, 0.1);">\
+                        <span style="color: #1DB954; font-weight: bold;">🤖 ИИ [{timestamp}]:</span><br>{message}</div>'
+        self.chat_area.append(formatted_msg)
+        self.chat_area.verticalScrollBar().setValue(
+            self.chat_area.verticalScrollBar().maximum()
+        )
+    
+    def add_user_message(self, message):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        formatted_msg = f'<div style="margin: 5px; padding: 8px; border-radius: 8px; background: rgba(70, 70, 90, 0.3);">\
+                        <span style="color: #B3B3B3; font-weight: bold;">👤 Вы [{timestamp}]:</span><br>{message}</div>'
+        self.chat_area.append(formatted_msg)
+    
+    def send_message(self):
+        message = self.input_field.text().strip()
+        if not message:
+            return
+        
+        self.add_user_message(message)
+        self.input_field.clear()
+        
+        QTimer.singleShot(500, lambda: self.process_ai_response(message))
+    
+    def send_quick_command(self, command):
+        self.input_field.setText(command)
+        self.send_message()
+    
+    def process_ai_response(self, message):
+        message_lower = message.lower()
+        
+        if any(word in message_lower for word in ['анализ', 'анализируй', 'проверь']):
+            if any(word in message_lower for word in ['систем', 'систему']):
+                response = "🔍 Анализирую общее состояние системы...\n\n📊 **Текущие метрики:**\n- Загрузка CPU: анализирую\n- Использование памяти: проверяю\n- Дисковые операции: мониторю\n- Сетевая активность: оцениваю\n\n💡 **Рекомендации будут готовы через несколько секунд непрерывного мониторинга.**"
+            elif any(word in message_lower for word in ['памят', 'memory']):
+                response = "💾 Анализирую использование памяти...\n\n**Что проверяю:**\n- Общее потребление RAM\n- Потенциальные утечки памяти\n- Эффективность использования\n- Swapping активность\n\n📈 Данные собираются в реальном времени."
+            else:
+                response = "🔍 Что именно вы хотите проанализировать? Систему, память, CPU или что-то другое?"
+        
+        elif any(word in message_lower for word in ['оптимизац', 'рекомендац', 'совет']):
+            response = "🚀 **Рекомендации по оптимизации:**\n\n1. **Для CPU:** ограничьте фоновые процессы\n2. **Для памяти:** закройте неиспользуемые приложения\n3. **Для диска:** используйте SSD для лучшей производительности\n4. **Общее:** регулярно обновляйте систему и драйверы"
+        
+        elif any(word in message_lower for word in ['прогноз', 'предсказан', 'ожида']):
+            response = "📈 **Прогноз производительности:**\n\nНа основе текущих трендов система должна оставаться стабильной. Рекомендую продолжить мониторинг для более точных предсказаний."
+        
+        elif any(word in message_lower for word in ['привет', 'здравств', 'hello']):
+            response = "Привет! Я ваш ИИ-помощник по производительности! 🚀\n\nЯ могу:\n- 📊 Анализировать систему в реальном времени\n- 💾 Давать рекомендации по оптимизации\n- 📈 Предсказывать тренды производительности\n- 🚀 Помогать с настройкой системы\n\nЧем могу помочь?"
+        
+        else:
+            response = "🤔 Я специализируюсь на анализе производительности. Спросите меня об:\n- 📊 Анализе системы\n- 💾 Оптимизации памяти\n- 🚀 Советах по настройке\n- 📈 Прогнозах производительности"
+        
+        self.add_ai_message(response)
+    
+    def update_ai_analysis(self, system_data, process_data):
+        try:
+            if system_data.get('sys_cpu', 0) > 80:
+                self.add_ai_message("⚠️ **ВНИМАНИЕ:** Высокая загрузка CPU! Рекомендую проверить процессы.")
+            if system_data.get('sys_mem', 0) > 75:
+                self.add_ai_message("⚠️ **ВНИМАНИЕ:** Высокое использование памяти! Возможна оптимизация.")
+                
+            status_color = "🟢" if system_data.get('sys_cpu', 0) < 70 else "🟡" if system_data.get('sys_cpu', 0) < 85 else "🔴"
+            self.ai_status.setText(f"{status_color} ИИ анализирует: CPU {system_data.get('sys_cpu', 0):.1f}%")
+            
+        except Exception as e:
+            print(f"Ошибка обновления ИИ: {e}")
+    def add_learning_features(self):
+        """Добавление элементов для интерактивного обучения"""
+        learning_layout = QHBoxLayout()
+        
+        # Кнопка отчета об обучении
+        self.btn_learning_report = QPushButton("📚 Отчет об обучении")
+        self.btn_learning_report.setStyleSheet("""
+            QPushButton {
+                background: rgba(70, 70, 90, 0.8);
+                color: #B3B3B3;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+                padding: 6px;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background: rgba(90, 90, 110, 0.9);
+            }
+        """)
+        self.btn_learning_report.clicked.connect(self.show_learning_report)
+        
+        # Кнопки обратной связи
+        self.btn_feedback_good = QPushButton("👍")
+        self.btn_feedback_bad = QPushButton("👎")
+        
+        for btn in [self.btn_feedback_good, self.btn_feedback_bad]:
+            btn.setFixedWidth(40)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(60, 60, 70, 0.8);
+                    border-radius: 4px;
+                    font-size: 12px;
+                }
+                QPushButton:hover {
+                    background: rgba(80, 80, 90, 0.9);
+                }
+            """)
+        
+        self.btn_feedback_good.clicked.connect(lambda: self.give_feedback("хорошо"))
+        self.btn_feedback_bad.clicked.connect(lambda: self.give_feedback("плохо"))
+        
+        learning_layout.addWidget(self.btn_learning_report)
+        learning_layout.addWidget(self.btn_feedback_good)
+        learning_layout.addWidget(self.btn_feedback_bad)
+        learning_layout.addStretch()
+        
+        # Добавляем перед полем ввода
+        self.layout().insertLayout(self.layout().count() - 2, learning_layout)
+    
+    def give_feedback(self, feedback):
+        """Обратная связь для обучения ИИ"""
+        if self.ai_agent and hasattr(self, 'last_state') and hasattr(self, 'last_action'):
+            response = self.ai_agent.interactive_learning(
+                feedback, self.last_state, self.last_action)
+            self.add_ai_message(response)
+        else:
+            self.add_ai_message("🤔 Нет данных для обучения. Продолжайте использовать систему.")
+    
+    def show_learning_report(self):
+        """Показать отчет об обучении"""
+        if self.ai_agent:
+            report = self.ai_agent.get_learning_report()
+            self.add_ai_message(report)
+        else:
+            self.add_ai_message("🤔 ИИ-агент недоступен.")
+    
+    def update_ai_analysis(self, system_data, process_data):
+        """Обновление анализа с сохранением состояния для обучения"""
+        try:
+            if not self.ai_agent:
+                return
+                
+            combined_data = {**system_data, **process_data}
+            
+            # Анализ и действие ИИ
+            ai_result = self.ai_agent.analyze_and_act(system_data, process_data)
+            
+            # Сохраняем для обратной связи
+            self.last_state = combined_data
+            self.last_action = self.ai_agent.actions.index(ai_result['action'])
+            
+            # Автоматические оповещения для критических состояний
+            if system_data.get('sys_cpu', 0) > 85 or system_data.get('sys_mem', 0) > 85:
+                self.add_ai_message(ai_result['response'])
+                
+            # Обновление статуса с информацией об обучении
+            stats = ai_result['learning_stats']
+            success_rate = stats['learning_rate'] * 100
+            
+            status_text = f"🟢 ИИ обучается | Успех: {success_rate:.1f}% | Решения: {stats['total_decisions']}"
+            self.ai_status.setText(status_text)
+            
+        except Exception as e:
+            print(f"Ошибка обновления ИИ: {e}")
+
+# ----------------- AI Analysis Dashboard -----------------
+class AIAnalysisDashboard(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+    
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        title = QLabel("📊 AI Analysis Dashboard")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #1DB954;
+                padding: 10px;
+                background: rgba(25, 25, 35, 0.9);
+                border-radius: 8px;
+                margin-bottom: 10px;
+            }
+        """)
+        layout.addWidget(title)
+        
+        metrics_layout = QGridLayout()
+        
+        self.score_label = QLabel("Оценка: --/100")
+        self.health_label = QLabel("Состояние: --")
+        self.recommendation_label = QLabel("Рекомендация: --")
+        
+        for label in [self.score_label, self.health_label, self.recommendation_label]:
+            label.setStyleSheet("""
+                QLabel {
+                    background: rgba(40, 40, 50, 0.8);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    padding: 8px;
+                    color: #E0E0E0;
+                    font-size: 11px;
+                    margin: 2px;
+                }
+            """)
+        
+        metrics_layout.addWidget(self.score_label, 0, 0)
+        metrics_layout.addWidget(self.health_label, 0, 1)
+        metrics_layout.addWidget(self.recommendation_label, 1, 0, 1, 2)
+        
+        layout.addLayout(metrics_layout)
+        
+        trend_label = QLabel("📈 График трендов производительности\n(активируется после 10 секунд мониторинга)")
+        trend_label.setStyleSheet("""
+            QLabel {
+                background: rgba(30, 30, 40, 0.9);
+                border: 1px dashed rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                padding: 20px;
+                color: #888;
+                font-size: 11px;
+                margin-top: 10px;
+            }
+        """)
+        trend_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(trend_label)
+        
+        self.insights_text = QTextEdit()
+        self.insights_text.setReadOnly(True)
+        self.insights_text.setStyleSheet("""
+            QTextEdit {
+                background: rgba(20, 20, 30, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                color: #E0E0E0;
+                font-size: 10px;
+                padding: 10px;
+            }
+        """)
+        self.insights_text.setMaximumHeight(120)
+        layout.addWidget(QLabel("💡 Инсайты ИИ:"))
+        layout.addWidget(self.insights_text)
+    
+    def update_dashboard(self, system_data, process_data):
+        try:
+            # Расчет оценки системы
+            cpu_score = max(0, 100 - system_data.get('sys_cpu', 0))
+            mem_score = max(0, 100 - system_data.get('sys_mem', 0))
+            overall_score = int((cpu_score + mem_score) / 2)
+            
+            self.score_label.setText(f"Оценка: {overall_score}/100")
+            
+            # Определение состояния
+            if overall_score > 80:
+                health_status = "ОТЛИЧНО"
+                color = "#1DB954"
+            elif overall_score > 60:
+                health_status = "ХОРОШО" 
+                color = "#FFA500"
+            else:
+                health_status = "ВНИМАНИЕ"
+                color = "#FF6B6B"
+                
+            self.health_label.setText(f"Состояние: {health_status}")
+            self.health_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+            
+            # Рекомендации
+            recommendations = []
+            if system_data.get('sys_cpu', 0) > 70:
+                recommendations.append("Оптимизировать CPU использование")
+            if system_data.get('sys_mem', 0) > 70:
+                recommendations.append("Освободить память")
+            if system_data.get('disk_Bps', 0) > 50 * 1024 * 1024:
+                recommendations.append("Проверить дисковую активность")
+                
+            rec_text = " | ".join(recommendations) if recommendations else "Система в норме"
+            self.recommendation_label.setText(f"Рекомендация: {rec_text}")
+            
+            # Инсайты
+            insights = []
+            if system_data.get('sys_cpu', 0) < 30 and process_data.get('proc_cpu', 0) > 50:
+                insights.append("🎯 Процесс использует много CPU при низкой системной нагрузке")
+            if system_data.get('sys_mem', 0) > 80:
+                insights.append("💾 Высокое использование памяти - возможна оптимизация")
+                
+            insights_text = "\n".join(insights) if insights else "✅ Система работает стабильно"
+            self.insights_text.setPlainText(insights_text)
+            
+        except Exception as e:
+            print(f"Ошибка обновления дашборда: {e}")
+
+# ----------------- Enhanced Main Window with AI -----------------
 class PerfTuneUltimate(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -369,6 +791,7 @@ class PerfTuneUltimate(QMainWindow):
         self.target_pid = None
         self.sampler = None
         self.last = None
+        self.ai_agent = AdaptivePerformanceAI()
 
         self.smoothers = {
             'proc_cpu': EMASmoother(0.2),
@@ -386,7 +809,7 @@ class PerfTuneUltimate(QMainWindow):
         self.init_ui()
         self.setup_timers()
         self.start_sampler()
-        self.log("PerfTune Ultimate Optimized initialized")
+        self.log("PerfTune AI Powered initialized")
 
     def get_system_info(self):
         try:
@@ -476,8 +899,9 @@ class PerfTuneUltimate(QMainWindow):
         pg_layout.addWidget(self.proc_list)
         l_layout.addWidget(proc_group)
 
-        tabs = QTabWidget()
-        tabs.setStyleSheet("""
+        # Tabs including AI tab
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
             QTabWidget::pane {
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 6px;
@@ -517,9 +941,14 @@ class PerfTuneUltimate(QMainWindow):
         
         self.rec_tab = tab_rec
         self.log_tab = tab_log
-        tabs.addTab(tab_rec, "Recommendations")
-        tabs.addTab(tab_log, "Log")
-        l_layout.addWidget(tabs)
+        self.tabs.addTab(tab_rec, "Recommendations")
+        self.tabs.addTab(tab_log, "Log")
+        
+        # Add AI tab
+        ai_tab = self.create_ai_tab()
+        self.tabs.addTab(ai_tab, "🧠 AI Assistant")
+        
+        l_layout.addWidget(self.tabs)
 
         btns_layout = QGridLayout()
         btns_layout.setSpacing(8)
@@ -674,6 +1103,21 @@ class PerfTuneUltimate(QMainWindow):
 
         QTimer.singleShot(100, self.refresh_proc_list)
         self.update_time()
+
+    def create_ai_tab(self):
+        """Создание вкладки ИИ"""
+        ai_tab = QWidget()
+        ai_layout = QHBoxLayout(ai_tab)
+        
+        # Левая часть - чат с ИИ
+        self.ai_chat = AIChatWidget(ai_agent=self.ai_agent)
+        ai_layout.addWidget(self.ai_chat, 2)
+        
+        # Правая часть - дашборд анализа
+        self.ai_dashboard = AIAnalysisDashboard()
+        ai_layout.addWidget(self.ai_dashboard, 1)
+        
+        return ai_tab
 
     def get_button_style(self, light=False):
         if light:
@@ -845,6 +1289,23 @@ class PerfTuneUltimate(QMainWindow):
         self.g_net.set_target(self.smoothers['net_MBps'].value)
         self.g_sys_cpu.set_target(self.smoothers['sys_cpu'].value)
         self.g_sys_mem.set_target(self.smoothers['sys_mem'].value)
+
+        # Обновление ИИ-анализа
+        system_data = {
+            'sys_cpu': data['sys_cpu'],
+            'sys_mem': data['sys_mem'], 
+            'disk_Bps': data['disk_Bps'],
+            'net_Bps': data['net_Bps']
+        }
+        
+        process_data = {
+            'proc_cpu': data['proc_cpu'],
+            'proc_mem': data['proc_mem'],
+            'proc_io': data['proc_io']
+        }
+        
+        self.ai_dashboard.update_dashboard(system_data, process_data)
+        self.ai_chat.update_ai_analysis(system_data, process_data)
 
     def refresh_proc_list(self):
         self.proc_list.clear()
