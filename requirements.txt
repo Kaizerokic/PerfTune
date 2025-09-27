@@ -1,0 +1,7 @@
+# Core dependencies
+psutil>=5.9.0
+numpy>=1.21.0
+PyQt6>=6.4.0
+# Optional dependencies for enhanced functionality
+plotly>=5.0.0
+scikit-learn>=1.0.0
